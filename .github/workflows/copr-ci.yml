@@ -217,12 +217,15 @@ jobs:
       - name: Trigger COPR build for opencode
         if: env.START_BUILD == 'true'
         run: |
-          echo "Copying sources..."
-          cp -v "$GITHUB_WORKSPACE"/sources/* "$(dirname "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}")"/
+          echo "Building sRPM..."
+          rpmbuild -bs \
+            --define "_sourcedir $GITHUB_WORKSPACE/sources" \
+            --define "_specdir $GITHUB_WORKSPACE" \
+            --define "_srcrpmdir $GITHUB_WORKSPACE" \
+            $GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}
 
           echo "Starting COPR build for opencode ${{ env.OPENCODE_BUILD_VERSION }}"
-          copr-cli build "${{ env.COPR_PROJECT }}" \
-            "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" $GITHUB_WORKSPACE/*.src.rpm
 
 
 ##############################################################################
@@ -289,12 +292,15 @@ jobs:
       - name: Trigger COPR build for greywall
         if: env.START_BUILD == 'true'
         run: |
-          echo "Copying sources..."
-          cp -v "$GITHUB_WORKSPACE"/sources/* "$(dirname "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}")"/
+          echo "Building sRPM..."
+          rpmbuild -bs \
+            --define "_sourcedir $GITHUB_WORKSPACE/sources" \
+            --define "_specdir $GITHUB_WORKSPACE" \
+            --define "_srcrpmdir $GITHUB_WORKSPACE" \
+            $GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}
 
           echo "Starting COPR build for greywall ${{ env.GREYWALL_BUILD_VERSION }}"
-          copr-cli build "${{ env.COPR_PROJECT }}" \
-            "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" $GITHUB_WORKSPACE/*.src.rpm
 
 
 ##############################################################################
@@ -361,9 +367,12 @@ jobs:
       - name: Trigger COPR build for greyproxy
         if: env.START_BUILD == 'true'
         run: |
-          echo "Copying sources..."
-          cp -v "$GITHUB_WORKSPACE"/sources/* "$(dirname "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}")"/
+          echo "Building sRPM..."
+          rpmbuild -bs \
+            --define "_sourcedir $GITHUB_WORKSPACE/sources" \
+            --define "_specdir $GITHUB_WORKSPACE" \
+            --define "_srcrpmdir $GITHUB_WORKSPACE" \
+            $GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}
 
           echo "Starting COPR build for greyproxy ${{ env.GREYPROXY_BUILD_VERSION }}"
-          copr-cli build "${{ env.COPR_PROJECT }}" \
-            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" $GITHUB_WORKSPACE/*.src.rpm
