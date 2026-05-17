@@ -4,7 +4,7 @@ set -euo pipefail
 
 rpmtopdir="$(rpm --eval %_topdir)"
 arch="$(rpm --eval %_arch)"
-dist="$(rpm --eval %_arch)" # Includes the dot (e.g. .fc44)
+dist="$(rpm --eval %dist)" # Includes the dot (e.g. .fc44)
 
 # Copy your spec files and sources into place
 echo "Copying spec files in rpm SOURCES topdir..."
