@@ -85,7 +85,7 @@ jobs:
           echo "GREYPROXY_VERSION=$GREYPROXY_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ github.repository }}
 
@@ -149,7 +149,7 @@ jobs:
           git config --global user.email "${{ env.GIT_USER_EMAIL }}"
           git add README.md
           git commit --allow-empty -m "[CI] Update tracked versions: opencode=${OC} greywall=${GW} greyproxy=${GP}"
-          git push
+          git push --force -v
 
 
 ##############################################################################
@@ -162,12 +162,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ github.repository }}
 
       - name: Install dependencies
-        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
+        run: dnf install -y -q copr-cli python3 git
 
       - name: Configure copr-cli
         run: |
@@ -214,34 +214,14 @@ jobs:
           sed -i "s/^Version:.*/Version:        ${{ env.OPENCODE_BUILD_VERSION }}/" \
             "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
 
-      - name: Build source RPM
-        if: env.START_BUILD == 'true'
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$GITHUB_WORKSPACE/srpm"
-
-          rpmbuild -bs \
-            --define "_topdir $GITHUB_WORKSPACE/rpmbuild" \
-            --define "_sourcedir $GITHUB_WORKSPACE" \
-            --define "_specdir $GITHUB_WORKSPACE" \
-            --define "_srcrpmdir $GITHUB_WORKSPACE/srpm" \
-            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
-
-          ls -lh "$GITHUB_WORKSPACE/srpm"
-
       - name: Trigger COPR build for opencode
         if: env.START_BUILD == 'true'
         run: |
-          set -euo pipefail
-
-          SRPM=$(find "$GITHUB_WORKSPACE/srpm" -name '*.src.rpm' | head -n1)
-
-          echo "Uploading SRPM: $SRPM"
-
-          copr-cli build \
-            "${{ env.COPR_PROJECT }}" \
-            "$SRPM"
+          echo "Copying sources..."
+          cp "$GITHUB_WORKSPACE/sources/"* "$GITHUB_WORKSPACE"/
+          echo "Starting COPR build for opencode ${{ env.OPENCODE_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" \
+            "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
 
 
 ##############################################################################
@@ -254,12 +234,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ github.repository }}
 
       - name: Install dependencies
-        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
+        run: dnf install -y -q copr-cli python3 git
 
       - name: Configure copr-cli
         run: |
@@ -305,34 +285,14 @@ jobs:
           sed -i "s/^Version:.*/Version:        ${{ env.GREYWALL_BUILD_VERSION }}/" \
             "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
 
-      - name: Build source RPM
-        if: env.START_BUILD == 'true'
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$GITHUB_WORKSPACE/srpm"
-
-          rpmbuild -bs \
-            --define "_topdir $GITHUB_WORKSPACE/rpmbuild" \
-            --define "_sourcedir $GITHUB_WORKSPACE" \
-            --define "_specdir $GITHUB_WORKSPACE" \
-            --define "_srcrpmdir $GITHUB_WORKSPACE/srpm" \
-            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
-
-          ls -lh "$GITHUB_WORKSPACE/srpm"
-
       - name: Trigger COPR build for greywall
         if: env.START_BUILD == 'true'
         run: |
-          set -euo pipefail
-
-          SRPM=$(find "$GITHUB_WORKSPACE/srpm" -name '*.src.rpm' | head -n1)
-
-          echo "Uploading SRPM: $SRPM"
-
-          copr-cli build \
-            "${{ env.COPR_PROJECT }}" \
-            "$SRPM"
+          echo "Copying sources..."
+          cp "$GITHUB_WORKSPACE/sources/"* "$GITHUB_WORKSPACE"/
+          echo "Starting COPR build for greywall ${{ env.GREYWALL_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" \
+            "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
 
 
 ##############################################################################
@@ -345,12 +305,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ github.repository }}
 
       - name: Install dependencies
-        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
+        run: dnf install -y -q copr-cli python3 git
 
       - name: Configure copr-cli
         run: |
@@ -396,31 +356,11 @@ jobs:
           sed -i "s/^Version:.*/Version:        ${{ env.GREYPROXY_BUILD_VERSION }}/" \
             "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
 
-      - name: Build source RPM
-        if: env.START_BUILD == 'true'
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$GITHUB_WORKSPACE/srpm"
-
-          rpmbuild -bs \
-            --define "_topdir $GITHUB_WORKSPACE/rpmbuild" \
-            --define "_sourcedir $GITHUB_WORKSPACE" \
-            --define "_specdir $GITHUB_WORKSPACE" \
-            --define "_srcrpmdir $GITHUB_WORKSPACE/srpm" \
-            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
-
-          ls -lh "$GITHUB_WORKSPACE/srpm"
-
       - name: Trigger COPR build for greyproxy
         if: env.START_BUILD == 'true'
         run: |
-          set -euo pipefail
-
-          SRPM=$(find "$GITHUB_WORKSPACE/srpm" -name '*.src.rpm' | head -n1)
-
-          echo "Uploading SRPM: $SRPM"
-
-          copr-cli build \
-            "${{ env.COPR_PROJECT }}" \
-            "$SRPM"
+          echo "Copying sources..."
+          cp "$GITHUB_WORKSPACE/sources/"* "$GITHUB_WORKSPACE"/
+          echo "Starting COPR build for greyproxy ${{ env.GREYPROXY_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" \
+            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
