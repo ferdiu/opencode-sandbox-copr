@@ -1,0 +1,112 @@
+policy_module(opencode, 1.0.0)
+
+########################################
+# Types
+########################################
+
+# The process domain for opencode
+type opencode_t;
+type opencode_exec_t;
+
+# Files opencode writes to its config/data dirs
+type opencode_config_t;
+type opencode_var_t;
+
+########################################
+# Domain transition
+########################################
+
+# Allow the user shell to transition into opencode_t when executing the binary
+application_domain(opencode_t, opencode_exec_t)
+role unconfined_r types opencode_t;
+
+########################################
+# Basic process rules
+########################################
+
+# Standard permissions every confined userspace process needs
+kernel_read_system_state(opencode_t)
+corecmd_exec_bin(opencode_t)
+corecmd_exec_shell(opencode_t)
+
+# Allow reading system libraries and shared data
+libs_use_ld_so(opencode_t)
+libs_use_shared_libs(opencode_t)
+files_read_usr_files(opencode_t)
+files_read_etc_files(opencode_t)
+
+# Terminal I/O (TUI)
+term_use_all_ptys(opencode_t)
+term_use_all_ttys(opencode_t)
+
+########################################
+# Filesystem access
+########################################
+
+# Read/write the current working directory (user_home_t covers home dirs)
+# Note: in practice opencode is always run inside a git repo in the user's home
+userdom_manage_user_home_content_files(opencode_t)
+userdom_manage_user_home_content_dirs(opencode_t)
+
+# opencode config dir: ~/.config/opencode/
+# Label with: chcon -Rt opencode_config_t ~/.config/opencode/
+manage_files_pattern(opencode_t, opencode_config_t, opencode_config_t)
+manage_dirs_pattern(opencode_t, opencode_config_t, opencode_config_t)
+
+# ~/.local/share/opencode/ (session data, databases)
+manage_files_pattern(opencode_t, opencode_var_t, opencode_var_t)
+manage_dirs_pattern(opencode_t, opencode_var_t, opencode_var_t)
+
+# /tmp — opencode creates /tmp/bun-node-<hash>/ for PATH shimming
+files_tmp_filetrans(opencode_t, opencode_var_t, { file dir lnk_file })
+manage_files_pattern(opencode_t, tmp_t, tmp_t)
+manage_dirs_pattern(opencode_t, tmp_t, tmp_t)
+manage_lnk_files_pattern(opencode_t, tmp_t, tmp_t)
+
+########################################
+# Process execution (LSPs, git, compilers)
+########################################
+
+# Execute binaries in /usr/bin (git, LSP servers, compilers, test runners)
+# These are labeled bin_t or usr_t in Fedora
+corecmd_exec_all_executables(opencode_t)
+
+# Allow spawning child processes (LSPs, shell commands)
+allow opencode_t self:process { fork signal sigkill execmem };
+allow opencode_t self:fifo_file rw_fifo_file_perms;
+allow opencode_t self:unix_stream_socket create_stream_socket_perms;
+
+########################################
+# Network access
+########################################
+
+# Outbound HTTPS to LLM provider APIs (port 443)
+corenet_tcp_connect_http_port(opencode_t)
+corenet_tcp_connect_https_port(opencode_t)
+
+# Internal HTTP server (client/server architecture) on localhost
+# opencode binds to 127.0.0.1:4000 by default
+corenet_tcp_bind_generic_port(opencode_t)
+allow opencode_t self:tcp_socket create_stream_socket_perms;
+allow opencode_t self:udp_socket create_socket_perms;
+
+# DNS resolution
+sysnet_read_config(opencode_t)
+corenet_udp_connect_dns_port(opencode_t)
+
+########################################
+# Explicit denials (belt-and-suspenders)
+########################################
+
+# Do NOT allow writing to SSH keys or GPG keys even if DAC permits it
+# These are labeled ssh_home_t and gpg_home_t respectively
+neverallow opencode_t ssh_home_t:file write;
+neverallow opencode_t gpg_home_t:file write;
+
+# Do NOT allow loading kernel modules
+neverallow opencode_t self:capability sys_module;
+
+# Do NOT allow ptrace on unrelated processes
+# (ptrace on self is allowed for bun's JIT)
+allow opencode_t self:process ptrace;
+neverallow opencode_t { domain -opencode_t -kernel_t }:process ptrace;

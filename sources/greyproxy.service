@@ -1,0 +1,34 @@
+# greyproxy.service — systemd user unit for the greyproxy network proxy
+#
+# Install location (system-wide user unit dir, available to all users):
+#   /usr/lib/systemd/user/greyproxy.service
+#
+# Enable per-user with:
+#   systemctl --user enable --now greyproxy
+#
+# Or let greywall handle setup automatically:
+#   greywall setup
+
+[Unit]
+Description=Greyproxy — deny-by-default SOCKS5/DNS proxy for greywall sandboxes
+Documentation=https://github.com/GreyhavenHQ/greyproxy
+After=network-online.target
+
+[Service]
+Type=simple
+# 'greyproxy serve' runs the proxy in foreground mode (no daemonisation).
+# The binary is installed system-wide by the RPM; no path quoting needed.
+ExecStart=%{_bindir}/greyproxy serve
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening for the service process itself
+# (Note: greyproxy needs network access; PrivateNetwork=yes would break it)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.config/greyproxy %h/.local/share/greyproxy %h/.local/bin
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

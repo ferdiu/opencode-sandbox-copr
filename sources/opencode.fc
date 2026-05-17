@@ -1,0 +1,19 @@
+# opencode.fc — SELinux file contexts for opencode
+#
+# After making changes, regenerate labels with:
+#   restorecon -Rv /usr/bin/opencode
+#   restorecon -Rv ~/.config/opencode
+#   restorecon -Rv ~/.local/share/opencode
+
+# The binary itself
+/usr/bin/opencode                           --  gen_context(system_u:object_r:opencode_exec_t,s0)
+
+# User config directory: ~/.config/opencode/
+# Apply with: chcon -Rt opencode_config_t ~/.config/opencode/
+# Or add a semanage fcontext rule:
+#   semanage fcontext -a -t opencode_config_t "/root/.config/opencode(/.*)?"
+#   semanage fcontext -a -t opencode_config_t "%{HOME}/.config/opencode(/.*)?"
+HOME_DIR/\.config/opencode(/.*)?            gen_context(system_u:object_r:opencode_config_t,s0)
+
+# User data directory: ~/.local/share/opencode/
+HOME_DIR/\.local/share/opencode(/.*)?       gen_context(system_u:object_r:opencode_var_t,s0)

@@ -1,0 +1,360 @@
+---
+# .github/workflows/copr-ci.yml
+#
+# Monitors three upstream projects for new releases and triggers a COPR build
+# for each package when a newer version is available than what is currently
+# in the ferdiu/opencode COPR project.
+#
+# Upstreams tracked:
+#   opencode  — https://github.com/anomalyco/opencode
+#   greywall  — https://github.com/GreyhavenHQ/greywall
+#   greyproxy — https://github.com/GreyhavenHQ/greyproxy
+#
+# Required GitHub repository secrets (Settings → Secrets → Actions):
+#   COPR_BUILD_L  — copr-cli login    (from https://copr.fedorainfracloud.org/api)
+#   COPR_BUILD_T  — copr-cli token    (from https://copr.fedorainfracloud.org/api)
+#
+# The copr-cli config section name must be "copr-cli" (default).
+# Download your token config from https://copr.fedorainfracloud.org/api and
+# split the login and token values into the two secrets above.
+
+name: COPR CI build
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC daily — after most upstream release windows
+  workflow_dispatch:        # allow manual trigger from the Actions tab
+
+env:
+  COPR_USERNAME:    ferdiu
+  COPR_PROJECT:     opencode
+  COPR_URL:         https://copr.fedorainfracloud.org
+  GIT_USER_NAME:    ferdiu
+  GIT_USER_EMAIL:   ferdiu@users.noreply.github.com
+
+  # Upstream repositories for version polling
+  OPENCODE_REPO:    https://github.com/anomalyco/opencode
+  GREYWALL_REPO:    https://github.com/GreyhavenHQ/greywall
+  GREYPROXY_REPO:   https://github.com/GreyhavenHQ/greyproxy
+
+  # Spec files (relative to GITHUB_WORKSPACE)
+  OPENCODE_SPEC:    opencode.spec
+  GREYWALL_SPEC:    greywall.spec
+  GREYPROXY_SPEC:   greyproxy.spec
+
+##############################################################################
+# Job 1: Poll all three upstreams and expose their latest versions
+##############################################################################
+jobs:
+  GetLatestVersions:
+    runs-on: ubuntu-latest
+    outputs:
+      OPENCODE_VERSION:  ${{ steps.versions.outputs.OPENCODE_VERSION }}
+      GREYWALL_VERSION:  ${{ steps.versions.outputs.GREYWALL_VERSION }}
+      GREYPROXY_VERSION: ${{ steps.versions.outputs.GREYPROXY_VERSION }}
+
+    steps:
+      - name: Resolve latest upstream versions
+        id: versions
+        run: |
+          set -euo pipefail
+
+          latest_tag() {
+            # Returns the latest semver tag from a git remote, stripping the 'v' prefix
+            git -c 'versionsort.suffix=-' \
+              ls-remote --exit-code --refs --sort='version:refname' --tags "$1" '*.*' \
+              | tail -1 \
+              | cut -d'/' -f3 \
+              | sed 's/^v//'
+          }
+
+          OPENCODE_VERSION=$(latest_tag  "${{ env.OPENCODE_REPO }}")
+          GREYWALL_VERSION=$(latest_tag  "${{ env.GREYWALL_REPO }}")
+          GREYPROXY_VERSION=$(latest_tag "${{ env.GREYPROXY_REPO }}")
+
+          echo "opencode  latest: $OPENCODE_VERSION"
+          echo "greywall  latest: $GREYWALL_VERSION"
+          echo "greyproxy latest: $GREYPROXY_VERSION"
+
+          [ -n "$OPENCODE_VERSION"  ] || { echo "ERROR: could not resolve opencode version";  exit 1; }
+          [ -n "$GREYWALL_VERSION"  ] || { echo "ERROR: could not resolve greywall version";  exit 1; }
+          [ -n "$GREYPROXY_VERSION" ] || { echo "ERROR: could not resolve greyproxy version"; exit 1; }
+
+          echo "OPENCODE_VERSION=$OPENCODE_VERSION"   >> "$GITHUB_OUTPUT"
+          echo "GREYWALL_VERSION=$GREYWALL_VERSION"   >> "$GITHUB_OUTPUT"
+          echo "GREYPROXY_VERSION=$GREYPROXY_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+
+      - name: Update README badges and version table
+        run: |
+          set -euo pipefail
+          OC="${{ steps.versions.outputs.OPENCODE_VERSION }}"
+          GW="${{ steps.versions.outputs.GREYWALL_VERSION }}"
+          GP="${{ steps.versions.outputs.GREYPROXY_VERSION }}"
+
+          cat > README.md << EOF
+          # opencode-sandbox-copr
+
+          RPM packaging for [opencode](https://opencode.ai) and its full security sandbox stack,
+          targeting Fedora via [COPR](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/).
+
+          A GitHub Actions workflow runs daily to detect new upstream releases
+          and trigger fresh COPR builds automatically.
+
+          ## Packages
+
+          | Package | Upstream | Description |
+          |---------|----------|-------------|
+          | \`opencode\` | [anomalyco/opencode](https://github.com/anomalyco/opencode) | AI coding agent (self-contained Bun binary) |
+          | \`opencode-selinux\` | same | SELinux MAC policy module (permissive by default) |
+          | \`opencode-sandbox\` | same | Wrapper to launch opencode via greywall |
+          | \`greywall\` | [GreyhavenHQ/greywall](https://github.com/GreyhavenHQ/greywall) | Kernel-level sandbox (bubblewrap + Landlock + Seccomp) |
+          | \`greyproxy\` | [GreyhavenHQ/greyproxy](https://github.com/GreyhavenHQ/greyproxy) | Deny-by-default SOCKS5/DNS proxy with live dashboard |
+
+          ## Install
+
+          \`\`\`bash
+          sudo dnf copr enable ferdiu/opencode
+          sudo dnf install opencode opencode-selinux opencode-sandbox
+          # pulls greywall, greyproxy, bubblewrap, socat, strace automatically
+
+          greywall setup    # once per user: start greyproxy as a systemd user service
+          greywall check    # verify the sandbox stack is operational
+          \`\`\`
+
+          ## COPR build status
+
+          [![opencode build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/opencode/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/opencode/)
+          [![greywall build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greywall/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greywall/)
+          [![greyproxy build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greyproxy/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greyproxy/)
+
+          ## Workflow status
+
+          [![COPR CI build](https://github.com/ferdiu/opencode-sandbox-copr/actions/workflows/copr-ci.yml/badge.svg)](https://github.com/ferdiu/opencode-sandbox-copr/actions/workflows/copr-ci.yml)
+
+          ## Tracked versions
+
+          | Package | Upstream latest |
+          |---------|----------------|
+          | opencode | [![opencode](https://img.shields.io/badge/opencode-${OC}-blue)](https://github.com/anomalyco/opencode/releases) |
+          | greywall | [![greywall](https://img.shields.io/badge/greywall-${GW}-blue)](https://github.com/GreyhavenHQ/greywall/releases) |
+          | greyproxy | [![greyproxy](https://img.shields.io/badge/greyproxy-${GP}-blue)](https://github.com/GreyhavenHQ/greyproxy/releases) |
+          EOF
+
+          git config --global user.name  "${{ env.GIT_USER_NAME }}"
+          git config --global user.email "${{ env.GIT_USER_EMAIL }}"
+          git add README.md
+          git commit --allow-empty -m "[CI] Update tracked versions: opencode=${OC} greywall=${GW} greyproxy=${GP}"
+          git push --force -v
+
+
+##############################################################################
+# Job 2: Build opencode (and its subpackages) if upstream is ahead of COPR
+##############################################################################
+  BuildOpencode:
+    needs: GetLatestVersions
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+
+      - name: Install dependencies
+        run: dnf install -y -q copr-cli python3 git
+
+      - name: Configure copr-cli
+        run: |
+          mkdir -p "$HOME/.config"
+          cat > "$HOME/.config/copr" << EOF
+          [copr-cli]
+          login    = ${{ secrets.COPR_BUILD_L }}
+          username = ${{ env.COPR_USERNAME }}
+          token    = ${{ secrets.COPR_BUILD_T }}
+          copr_url = ${{ env.COPR_URL }}
+          EOF
+
+      - name: Compare upstream version with COPR
+        id: check_opencode
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          UPSTREAM="${{ needs.GetLatestVersions.outputs.OPENCODE_VERSION }}"
+
+          COPR_VERSION=$(copr-cli get-package \
+            "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
+            --name opencode \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["latest_build"]["source_package"]["version"])' \
+            2>/dev/null || echo "")
+
+          echo "Upstream : $UPSTREAM"
+          echo "COPR     : ${COPR_VERSION:-<none>}"
+
+          # Normalise to zero-padded integers for comparison (handles x.y.z)
+          norm() { echo "$1" | awk -F. '{printf "%05d%05d%05d\n", $1, $2, $3}'; }
+
+          if [ -z "$COPR_VERSION" ] || [ "$(norm "$UPSTREAM")" -gt "$(norm "${COPR_VERSION%-*}")" ]; then
+            echo "START_BUILD=true" >> "$GITHUB_ENV"
+            echo "OPENCODE_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            echo "→ COPR build needed"
+          else
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            echo "→ COPR already up to date, skipping"
+          fi
+
+      - name: Patch version into spec file
+        if: env.START_BUILD == 'true'
+        run: |
+          sed -i "s/^Version:.*/Version:        ${{ env.OPENCODE_BUILD_VERSION }}/" \
+            "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
+
+      - name: Trigger COPR build for opencode
+        if: env.START_BUILD == 'true'
+        run: |
+          echo "Starting COPR build for opencode ${{ env.OPENCODE_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" \
+            "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
+
+
+##############################################################################
+# Job 3: Build greywall if upstream is ahead of COPR
+##############################################################################
+  BuildGreywall:
+    needs: GetLatestVersions
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+
+      - name: Install dependencies
+        run: dnf install -y -q copr-cli python3 git
+
+      - name: Configure copr-cli
+        run: |
+          mkdir -p "$HOME/.config"
+          cat > "$HOME/.config/copr" << EOF
+          [copr-cli]
+          login    = ${{ secrets.COPR_BUILD_L }}
+          username = ${{ env.COPR_USERNAME }}
+          token    = ${{ secrets.COPR_BUILD_T }}
+          copr_url = ${{ env.COPR_URL }}
+          EOF
+
+      - name: Compare upstream version with COPR
+        id: check_greywall
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          UPSTREAM="${{ needs.GetLatestVersions.outputs.GREYWALL_VERSION }}"
+
+          COPR_VERSION=$(copr-cli get-package \
+            "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
+            --name greywall \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["latest_build"]["source_package"]["version"])' \
+            2>/dev/null || echo "")
+
+          echo "Upstream : $UPSTREAM"
+          echo "COPR     : ${COPR_VERSION:-<none>}"
+
+          norm() { echo "$1" | awk -F. '{printf "%05d%05d%05d\n", $1, $2, $3}'; }
+
+          if [ -z "$COPR_VERSION" ] || [ "$(norm "$UPSTREAM")" -gt "$(norm "${COPR_VERSION%-*}")" ]; then
+            echo "START_BUILD=true"  >> "$GITHUB_ENV"
+            echo "GREYWALL_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            echo "→ COPR build needed"
+          else
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            echo "→ COPR already up to date, skipping"
+          fi
+
+      - name: Patch version into spec file
+        if: env.START_BUILD == 'true'
+        run: |
+          sed -i "s/^Version:.*/Version:        ${{ env.GREYWALL_BUILD_VERSION }}/" \
+            "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
+
+      - name: Trigger COPR build for greywall
+        if: env.START_BUILD == 'true'
+        run: |
+          echo "Starting COPR build for greywall ${{ env.GREYWALL_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" \
+            "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
+
+
+##############################################################################
+# Job 4: Build greyproxy if upstream is ahead of COPR
+##############################################################################
+  BuildGreyproxy:
+    needs: GetLatestVersions
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+
+      - name: Install dependencies
+        run: dnf install -y -q copr-cli python3 git
+
+      - name: Configure copr-cli
+        run: |
+          mkdir -p "$HOME/.config"
+          cat > "$HOME/.config/copr" << EOF
+          [copr-cli]
+          login    = ${{ secrets.COPR_BUILD_L }}
+          username = ${{ env.COPR_USERNAME }}
+          token    = ${{ secrets.COPR_BUILD_T }}
+          copr_url = ${{ env.COPR_URL }}
+          EOF
+
+      - name: Compare upstream version with COPR
+        id: check_greyproxy
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          UPSTREAM="${{ needs.GetLatestVersions.outputs.GREYPROXY_VERSION }}"
+
+          COPR_VERSION=$(copr-cli get-package \
+            "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
+            --name greyproxy \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["latest_build"]["source_package"]["version"])' \
+            2>/dev/null || echo "")
+
+          echo "Upstream : $UPSTREAM"
+          echo "COPR     : ${COPR_VERSION:-<none>}"
+
+          norm() { echo "$1" | awk -F. '{printf "%05d%05d%05d\n", $1, $2, $3}'; }
+
+          if [ -z "$COPR_VERSION" ] || [ "$(norm "$UPSTREAM")" -gt "$(norm "${COPR_VERSION%-*}")" ]; then
+            echo "START_BUILD=true"  >> "$GITHUB_ENV"
+            echo "GREYPROXY_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            echo "→ COPR build needed"
+          else
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            echo "→ COPR already up to date, skipping"
+          fi
+
+      - name: Patch version into spec file
+        if: env.START_BUILD == 'true'
+        run: |
+          sed -i "s/^Version:.*/Version:        ${{ env.GREYPROXY_BUILD_VERSION }}/" \
+            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
+
+      - name: Trigger COPR build for greyproxy
+        if: env.START_BUILD == 'true'
+        run: |
+          echo "Starting COPR build for greyproxy ${{ env.GREYPROXY_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" \
+            "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"

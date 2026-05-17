@@ -1,0 +1,234 @@
+# opencode.spec — Fedora COPR spec for opencode + SELinux policy
+#
+# Repository:  https://github.com/ferdiu/opencode-sandbox-copr
+# COPR project: https://copr.fedorainfracloud.org/coprs/ferdiu/opencode
+#
+# Part of a 3-spec COPR project. Directory layout expected in git:
+#
+#   opencode.spec       (this file)
+#   greywall.spec
+#   greyproxy.spec
+#   sources/
+#     opencode.te
+#     opencode.fc
+#     opencode-sandbox.sh
+#
+# Build this package locally:
+#   spectool -g -R opencode.spec          # download Source0
+#   rpmbuild -bb opencode.spec
+#
+# For COPR: add each spec as a separate package in the same project.
+# COPR resolves cross-package Requires (greywall, greyproxy) at install time
+# because they all land in the same dnf repository.
+
+%global debug_package %{nil}
+
+Name:           opencode
+# Bump Version + recalculate SHA256 on each upstream release.
+# Quick SHA256: curl -sL <Source0 URL> | sha256sum
+Version:        1.15.1
+Release:        1%{?dist}
+Summary:        Open source AI coding agent for the terminal
+
+License:        MIT
+URL:            https://opencode.ai
+
+# Upstream distributes a single self-contained binary compiled with Bun.
+# The tarball for linux-x64 unpacks as a bare ./opencode ELF (no subdirectory).
+# Confirm layout with: tar -tzf opencode-linux-x64.tar.gz
+Source0:        https://github.com/anomalyco/opencode/releases/download/v%{version}/opencode-linux-x64.tar.gz
+# SELinux policy sources — live next to this spec in git (see sources/ dir)
+Source1:        opencode.te
+Source2:        opencode.fc
+# Greywall wrapper — installed as /usr/bin/opencode-sandbox
+Source3:        opencode-sandbox.sh
+
+# ── BuildRequires ──────────────────────────────────────────────────────────
+# The opencode binary is pre-built; no compiler needed for it.
+BuildRequires:  tar
+# Needed to compile the SELinux .te + .fc into a .pp.bz2 module
+BuildRequires:  make
+BuildRequires:  selinux-policy-devel
+BuildRequires:  checkpolicy
+
+# ── Requires (main package) ────────────────────────────────────────────────
+# The binary bundles the full Bun runtime — zero Node/Bun deps at runtime.
+# bubblewrap + socat are required by greywall for its namespace sandbox;
+# pulling them here guarantees the sandbox layer is available.
+Requires:       bubblewrap
+Requires:       socat
+
+%description
+OpenCode is an open source, terminal-based AI coding agent.
+
+It supports multiple LLM providers (Claude, OpenAI, Gemini, local Ollama models)
+and features built-in LSP support, a rich TUI, and a client/server architecture.
+
+The upstream binary is compiled with Bun and is fully self-contained —
+no Bun or Node.js runtime is required on the host system.
+
+Security hardening subpackages also provided by this COPR:
+  opencode-selinux   — SELinux MAC policy module (permissive by default)
+  opencode-sandbox   — launcher that runs opencode inside a greywall sandbox
+  greywall           — kernel-level filesystem+network sandbox (bubblewrap+Landlock)
+  greyproxy          — deny-by-default SOCKS5/DNS transparent proxy
+
+
+##############################################################################
+# Subpackage: opencode-selinux
+##############################################################################
+%package selinux
+Summary:        SELinux policy module for opencode
+Requires:       %{name} = %{version}-%{release}
+Requires:       selinux-policy-targeted
+Requires(post): policycoreutils
+Requires(postun): policycoreutils
+
+%description selinux
+SELinux type enforcement module for the opencode AI coding agent.
+
+Installed in PERMISSIVE mode by default: AVC denials are logged but nothing
+is blocked. This lets you verify that legitimate tool access is allowed before
+switching to enforcing mode.
+
+Hardening workflow (run after a normal opencode session):
+  sudo ausearch -c opencode --raw | audit2allow -M opencode-local
+  sudo semodule -i opencode-local.pp
+  sudo semanage permissive -d opencode_t    # enforce
+
+Policy allows opencode to:
+  - Read/write files in user_home_t (current project directory)
+  - Execute /usr/bin/* binaries (git, LSP servers, compilers)
+  - Create files/symlinks under /tmp (required for PATH shimming)
+  - Connect outbound TCP 443 (HTTPS to LLM APIs)
+  - Bind TCP on localhost (internal HTTP server / desktop client mode)
+
+Policy denies (neverallow):
+  - Write to ~/.ssh/ (ssh_home_t) or ~/.gnupg/ (gpg_home_t)
+  - Load kernel modules (sys_module capability)
+  - ptrace processes outside the opencode_t domain
+
+
+##############################################################################
+# Subpackage: opencode-sandbox
+##############################################################################
+%package sandbox
+Summary:        Run opencode inside a greywall deny-by-default sandbox
+Requires:       %{name} = %{version}-%{release}
+# greywall is built by greywall.spec in the same COPR project.
+# Installing this subpackage will automatically pull in greywall, greyproxy,
+# bubblewrap, and socat — the complete sandbox stack.
+Requires:       greywall
+Requires:       bubblewrap
+Requires:       socat
+
+%description sandbox
+Thin wrapper script that invokes opencode through greywall, which enforces
+a deny-by-default sandbox using bubblewrap user namespaces, Linux Landlock,
+Seccomp BPF, and eBPF monitoring.
+
+The opencode built-in greywall profile restricts filesystem access to the
+current project directory and routes all outbound TCP/UDP through greyproxy.
+Visit http://localhost:43080 to review and approve/deny network requests.
+
+Usage:
+  opencode-sandbox                    # sandboxed run using the learned profile
+  GREYWALL_LEARN=1 opencode-sandbox   # learning mode: trace and build a profile
+  opencode-sandbox --help             # passes flags through to opencode
+
+On first run without a saved profile, greywall will prompt you to apply the
+built-in opencode profile (covers ~/.config/opencode, ~/.local/share/opencode,
+the working directory, and necessary system paths).
+
+
+##############################################################################
+# %prep
+##############################################################################
+%prep
+# -c creates the named build dir; -T suppresses auto-unpack
+%setup -q -c -T -n %{name}-%{version}
+# Unpack the upstream tarball (bare binary layout, no subdirectory)
+tar -xzf %{SOURCE0}
+# Tolerate rare layout where upstream wraps inside a subdir
+if [ -d opencode-linux-x64 ]; then
+    mv opencode-linux-x64/opencode .
+fi
+# Fail loudly if the binary is missing rather than producing a broken RPM
+test -e opencode || { echo "ERROR: opencode binary not found after unpack"; exit 1; }
+
+
+##############################################################################
+# %build — compile SELinux policy module only
+##############################################################################
+%build
+cp %{SOURCE1} opencode.te
+cp %{SOURCE2} opencode.fc
+make -f %{_datadir}/selinux/devel/Makefile opencode.pp
+bzip2 -9 opencode.pp
+
+
+##############################################################################
+# %install
+##############################################################################
+%install
+# Main binary
+install -D -m 0755 opencode \
+    %{buildroot}%{_bindir}/opencode
+
+# SELinux .pp module
+install -D -m 0644 opencode.pp.bz2 \
+    %{buildroot}%{_datadir}/selinux/packages/opencode.pp.bz2
+
+# Sandbox wrapper
+install -D -m 0755 %{SOURCE3} \
+    %{buildroot}%{_bindir}/opencode-sandbox
+
+
+##############################################################################
+# %files — main
+##############################################################################
+%files
+%{_bindir}/opencode
+
+
+##############################################################################
+# %files / scriptlets — opencode-selinux
+##############################################################################
+%files selinux
+%{_datadir}/selinux/packages/opencode.pp.bz2
+
+%post selinux
+semodule -i %{_datadir}/selinux/packages/opencode.pp.bz2 2>/dev/null || :
+semanage permissive -a opencode_t 2>/dev/null || :
+echo ""
+echo "=== opencode SELinux module installed (PERMISSIVE mode) ==="
+echo "Denials are logged but not enforced. After normal use, run:"
+echo "  sudo ausearch -c opencode --raw | audit2allow -M opencode-local"
+echo "  sudo semodule -i opencode-local.pp"
+echo "  sudo semanage permissive -d opencode_t   # enable enforcement"
+echo ""
+
+%postun selinux
+if [ "$1" -eq 0 ]; then
+    semodule -r opencode 2>/dev/null || :
+    semanage permissive -d opencode_t 2>/dev/null || :
+fi
+
+
+##############################################################################
+# %files — opencode-sandbox
+##############################################################################
+%files sandbox
+%{_bindir}/opencode-sandbox
+
+
+##############################################################################
+# %changelog
+##############################################################################
+%changelog
+* Sat May 16 2026 Federico Manzella <ferdiu@users.noreply.github.com> - 1.15.1-1
+- Initial COPR package for opencode v1.15.1
+- Binary is Bun-compiled, fully self-contained — no Node/Bun runtime required
+- Requires: bubblewrap socat on main package (sandbox layer prerequisites)
+- -selinux: permissive MAC policy with documented hardening workflow
+- -sandbox: Requires: greywall (from greywall.spec in this COPR project)
