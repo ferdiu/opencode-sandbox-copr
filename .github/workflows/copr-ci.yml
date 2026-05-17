@@ -167,7 +167,7 @@ jobs:
           repository: ${{ github.repository }}
 
       - name: Install dependencies
-        run: dnf install -y -q copr-cli python3 git
+        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
 
       - name: Configure copr-cli
         run: |
@@ -243,7 +243,7 @@ jobs:
           repository: ${{ github.repository }}
 
       - name: Install dependencies
-        run: dnf install -y -q copr-cli python3 git
+        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
 
       - name: Configure copr-cli
         run: |
@@ -318,7 +318,7 @@ jobs:
           repository: ${{ github.repository }}
 
       - name: Install dependencies
-        run: dnf install -y -q copr-cli python3 git
+        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
 
       - name: Configure copr-cli
         run: |
