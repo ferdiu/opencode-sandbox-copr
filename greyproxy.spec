@@ -23,15 +23,15 @@
 # IMPORTANT: greyproxy installs itself as a *user* systemd service.
 # The RPM %post can only enable/start it via 'systemctl --user' which requires
 # a running user session. We ship a systemd user unit file and use the
-# recommended %systemd_user_post macros. Users must run:
+# recommended %%systemd_user_post macros. Users must run:
 #   systemctl --user enable --now greyproxy
 # or simply run 'greywall setup' which handles this automatically.
 
 %global debug_package %{nil}
 
 Name:           greyproxy
-# Latest release: v0.2.3 (March 5, 2026) — update Version + Source0 together
-Version:        0.2.3
+# Latest release: v0.4.3 (March 5, 2026) — update Version + Source0 together
+Version:        0.4.3
 Release:        1%{?dist}
 Summary:        Deny-by-default SOCKS5/DNS proxy with live dashboard for greywall
 
@@ -39,12 +39,12 @@ License:        MIT
 URL:            https://github.com/GreyhavenHQ/greyproxy
 
 # Upstream uses GoReleaser. Release asset naming convention:
-#   greyproxy_{VERSION}_{OS}_{ARCH}.tar.gz  (OS=Linux capital, ARCH=x86_64)
+#   greyproxy_{VERSION}_{OS}_{ARCH}.tar.gz  (OS=linux capital, ARCH=amd64)
 # Tarball contents: greyproxy (binary), LICENSE, README.md
-Source0:        https://github.com/GreyhavenHQ/greyproxy/releases/download/v%{version}/greyproxy_%{version}_Linux_x86_64.tar.gz
+Source0:        https://github.com/GreyhavenHQ/greyproxy/releases/download/v%{version}/greyproxy_%{version}_linux_amd64.tar.gz
 
 # Systemd user unit file (greyproxy registers itself; we ship a pre-written unit
-# so rpm can use the standard %systemd_user_post macros)
+# so rpm can use the standard %%systemd_user_post macros)
 Source1:        greyproxy.service
 
 # ── BuildRequires ──────────────────────────────────────────────────────────

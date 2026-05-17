@@ -44,7 +44,7 @@ URL:            https://github.com/GreyhavenHQ/greywall
 Source0:        https://github.com/GreyhavenHQ/greywall/releases/download/v%{version}/greywall_%{version}_Linux_x86_64.tar.gz
 
 # Checksums file (used for verification; not used in rpmbuild but good to keep)
-# Source1:      https://github.com/GreyhavenHQ/greywall/releases/download/v%{version}/checksums.txt
+# Source1:      https://github.com/GreyhavenHQ/greywall/releases/download/v%%{version}/checksums.txt
 
 # ── BuildRequires ──────────────────────────────────────────────────────────
 # We download the pre-built binary (same as the install.sh approach).
