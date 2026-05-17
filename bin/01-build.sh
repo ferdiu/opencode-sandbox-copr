@@ -16,6 +16,7 @@ cp greyproxy.spec "$rpmtopdir/SPECS/"
 echo "Copying source files in rpm SOURCES topdir..."
 cp sources/opencode.te          "$rpmtopdir/SOURCES/"
 cp sources/opencode.fc          "$rpmtopdir/SOURCES/"
+cp sources/opencode-launch      "$rpmtopdir/SOURCES/"
 cp sources/opencode-sandbox.sh  "$rpmtopdir/SOURCES/"
 cp sources/greyproxy.service    "$rpmtopdir/SOURCES/"
 

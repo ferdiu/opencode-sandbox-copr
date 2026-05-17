@@ -1,0 +1,57 @@
+#!/bin/sh
+# opencode-launch: choose best bundled binary and warn about alternatives
+libexecdir="/usr/libexec/opencode"
+warn_and_hint() {
+  cat >&2 <<'WARN'
+WARNING: A more optimized opencode build may exist for your CPU (AVX2).
+You can use 'update-alternatives --config opencode' to switch to an optimized variant.
+WARN
+}
+# detection helpers
+supports_avx2() {
+    case "$(uname -s)" in
+        Linux)
+            [ "$(uname -m)" = "x86_64" ] || return 1
+            if [ -r /proc/cpuinfo ]; then
+                grep -qi '\<avx2\>' /proc/cpuinfo && return 0 || return 1
+            fi
+            return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Select candidate in same preference logic as original script (simplified)
+select_binary() {
+    if supports_avx2; then
+        # prefer non-baseline AVX2 build if present
+        if [ -x "$libexecdir/opencode" ]; then echo "$libexecdir/opencode"; return; fi
+        if [ -x "$libexecdir/opencode-baseline" ]; then echo "$libexecdir/opencode-baseline"; return; fi
+    else
+        # baseline preferred on x86_64 without AVX2
+        if [ -x "$libexecdir/opencode-baseline" ]; then echo "$libexecdir/opencode-baseline"; return; fi
+        if [ -x "$libexecdir/opencode" ]; then echo "$libexecdir/opencode"; return; fi
+    fi
+    # fallback: pick any executable we have
+    for b in opencode opencode-baseline; do
+        [ -x "$libexecdir/$b" ] && { echo "$libexecdir/$b"; return; }
+    done
+    return 1
+}
+
+best="$(select_binary)" || { echo "opencode binary missing" >&2; exit 1; }
+
+# if best isn't the default alternatives choice, print the hint once
+# Use update-alternatives to see current auto selection
+if [ -x "$best" ]; then
+    current="$(readlink -f /usr/bin/opencode 2>/dev/null || true)"
+    if [ "$current" != "$best" ]; then
+        warn_and_hint
+    fi
+    exec "$best" "$@"
+else
+    echo "No suitable opencode binary found" >&2
+    exit 1
+fi

@@ -5,15 +5,20 @@
 #   restorecon -Rv ~/.config/opencode
 #   restorecon -Rv ~/.local/share/opencode
 
-# The binary itself
-/usr/bin/opencode                           --  gen_context(system_u:object_r:opencode_exec_t,s0)
+# The actual binary (in libexecdir — this is the exec entry point for SELinux domain transition)
+/usr/libexec/opencode/opencode                --  gen_context(system_u:object_r:opencode_exec_t,s0)
+/usr/libexec/opencode/opencode-baseline       --  gen_context(system_u:object_r:opencode_exec_t,s0)
+/usr/libexec/opencode/opencode-launch         --  gen_context(system_u:object_r:opencode_exec_t,s0)
+
+# The wrapper shell script at /usr/bin/opencode is a plain shell script
+# (not the exec entrypoint) — it does not need opencode_exec_t
 
 # User config directory: ~/.config/opencode/
 # Apply with: chcon -Rt opencode_config_t ~/.config/opencode/
 # Or add a semanage fcontext rule:
 #   semanage fcontext -a -t opencode_config_t "/root/.config/opencode(/.*)?"
 #   semanage fcontext -a -t opencode_config_t "%{HOME}/.config/opencode(/.*)?"
-HOME_DIR/\.config/opencode(/.*)?            gen_context(system_u:object_r:opencode_config_t,s0)
+HOME_DIR/\.config/opencode(/.*)?              gen_context(system_u:object_r:opencode_config_t,s0)
 
 # User data directory: ~/.local/share/opencode/
-HOME_DIR/\.local/share/opencode(/.*)?       gen_context(system_u:object_r:opencode_var_t,s0)
+HOME_DIR/\.local/share/opencode(/.*)?         gen_context(system_u:object_r:opencode_var_t,s0)

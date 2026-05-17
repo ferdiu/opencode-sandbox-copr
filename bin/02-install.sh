@@ -14,6 +14,6 @@ installable=(
 
 # Install greyproxy first (greywall depends on it)
 echo "Installing build packages ${installable[@]}..."
-sudo dnf reinstall -y "${installable[@]}"
+sudo rpm -Uvh --force "${installable[@]}"
 
 echo "done. Bye ;)"
