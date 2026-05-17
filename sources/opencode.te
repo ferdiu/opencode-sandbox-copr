@@ -1,112 +1,166 @@
-policy_module(opencode, 1.0.0)
+policy_module(opencode, 1.0.2)
 
 ########################################
-# Types
+# Design notes
+#
+# This is a LOADABLE MODULE (not a monolithic policy).
+# The key rules for loadable modules are:
+#
+#   1. Types from OTHER modules (ssh, gpg, etc.) CANNOT be referenced
+#      directly — they must be wrapped in optional_policy() with gen_require().
+#
+#   2. neverallow statements in loadable modules are compiled but NOT enforced
+#      at runtime — they are ignored by semodule. Drop them entirely; use
+#      greywall's Landlock+Seccomp for runtime enforcement instead.
+#
+#   3. Only interfaces from the BASE policy (kernel, files, corecmd, etc.)
+#      can be called unconditionally. Contrib module interfaces (ssh_*, gpg_*)
+#      require optional_policy() wrapping.
+#
+#   4. The role unconfined_r cannot be referenced in a loadable module —
+#      it lives in the base and is assigned automatically via application_domain().
+#
+# This module starts in PERMISSIVE mode (see opencode.spec %post scriptlet).
+# After real use, collect AVC denials and refine:
+#   sudo ausearch -c opencode --raw | audit2allow -M opencode-local
+#   sudo semodule -i opencode-local.pp
+#   sudo semanage permissive -d opencode_t   # switch to enforcing
 ########################################
 
-# The process domain for opencode
+########################################
+# Type declarations
+########################################
+
+# opencode process domain and its entrypoint executable
 type opencode_t;
 type opencode_exec_t;
 
-# Files opencode writes to its config/data dirs
+# ~/.config/opencode/ — application config files
 type opencode_config_t;
+
+# ~/.local/share/opencode/ — session data, sqlite databases, model cache
 type opencode_var_t;
 
+# /tmp/bun-node-<hash>/ — PATH shimming directory created at startup
+type opencode_tmp_t;
+files_tmp_file(opencode_tmp_t)
+
 ########################################
-# Domain transition
+# Domain entry
 ########################################
 
-# Allow the user shell to transition into opencode_t when executing the binary
+# application_domain() is defined in the base policy (userdomain.if).
+# It declares opencode_exec_t as an entrypoint and sets up the domain
+# transition. It does NOT require unconfined_r — that role is automatically
+# inherited from the calling user domain.
 application_domain(opencode_t, opencode_exec_t)
-role unconfined_r types opencode_t;
 
 ########################################
-# Basic process rules
+# Basic process self-permissions
 ########################################
 
-# Standard permissions every confined userspace process needs
+# Fork child processes (LSP servers, shell commands, git)
+allow opencode_t self:process { fork execmem signal sigkill sigstop };
+
+# Pipes for IPC with child processes (LSP stdio communication)
+allow opencode_t self:fifo_file rw_fifo_file_perms;
+
+# Unix sockets (internal IPC, greywall integration)
+allow opencode_t self:unix_stream_socket create_stream_socket_perms;
+allow opencode_t self:unix_dgram_socket  create_socket_perms;
+
+########################################
+# System state and libraries
+########################################
+
+# Read /proc entries, kernel state (needed by Bun runtime)
 kernel_read_system_state(opencode_t)
+
+# Execute binaries in /bin, /usr/bin (git, LSP servers, shells, compilers)
 corecmd_exec_bin(opencode_t)
 corecmd_exec_shell(opencode_t)
 
-# Allow reading system libraries and shared data
-libs_use_ld_so(opencode_t)
-libs_use_shared_libs(opencode_t)
-files_read_usr_files(opencode_t)
+# Read /etc (resolv.conf, nsswitch.conf, ssl certs, ld.so.conf)
 files_read_etc_files(opencode_t)
 
-# Terminal I/O (TUI)
+# Read /usr (shared data, LSP binaries, locale files)
+files_read_usr_files(opencode_t)
+
+
+########################################
+# Terminal I/O (TUI interface)
+########################################
+
 term_use_all_ptys(opencode_t)
 term_use_all_ttys(opencode_t)
 
 ########################################
-# Filesystem access
+# Filesystem: user home directory
 ########################################
 
-# Read/write the current working directory (user_home_t covers home dirs)
-# Note: in practice opencode is always run inside a git repo in the user's home
+# Read and write files/dirs in the user's home tree.
+# This covers the current git working directory (always under $HOME).
+# Defined in userdomain.if — stable base interface.
 userdom_manage_user_home_content_files(opencode_t)
 userdom_manage_user_home_content_dirs(opencode_t)
+userdom_manage_user_home_content_symlinks(opencode_t)
 
-# opencode config dir: ~/.config/opencode/
-# Label with: chcon -Rt opencode_config_t ~/.config/opencode/
+########################################
+# Filesystem: opencode config dir (~/.config/opencode/)
+########################################
+
+# Files/dirs with type opencode_config_t.
+# Apply this label with (run once after install):
+#   semanage fcontext -a -t opencode_config_t "$HOME/.config/opencode(/.*)?"
+#   restorecon -Rv ~/.config/opencode
 manage_files_pattern(opencode_t, opencode_config_t, opencode_config_t)
 manage_dirs_pattern(opencode_t, opencode_config_t, opencode_config_t)
+manage_lnk_files_pattern(opencode_t, opencode_config_t, opencode_config_t)
 
-# ~/.local/share/opencode/ (session data, databases)
+########################################
+# Filesystem: opencode data dir (~/.local/share/opencode/)
+########################################
+
+# Files/dirs with type opencode_var_t.
+# Apply with:
+#   semanage fcontext -a -t opencode_var_t "$HOME/.local/share/opencode(/.*)?"
+#   restorecon -Rv ~/.local/share/opencode
 manage_files_pattern(opencode_t, opencode_var_t, opencode_var_t)
 manage_dirs_pattern(opencode_t, opencode_var_t, opencode_var_t)
-
-# /tmp — opencode creates /tmp/bun-node-<hash>/ for PATH shimming
-files_tmp_filetrans(opencode_t, opencode_var_t, { file dir lnk_file })
-manage_files_pattern(opencode_t, tmp_t, tmp_t)
-manage_dirs_pattern(opencode_t, tmp_t, tmp_t)
-manage_lnk_files_pattern(opencode_t, tmp_t, tmp_t)
+manage_lnk_files_pattern(opencode_t, opencode_var_t, opencode_var_t)
 
 ########################################
-# Process execution (LSPs, git, compilers)
+# Filesystem: /tmp (Bun PATH shimming)
 ########################################
 
-# Execute binaries in /usr/bin (git, LSP servers, compilers, test runners)
-# These are labeled bin_t or usr_t in Fedora
-corecmd_exec_all_executables(opencode_t)
-
-# Allow spawning child processes (LSPs, shell commands)
-allow opencode_t self:process { fork signal sigkill execmem };
-allow opencode_t self:fifo_file rw_fifo_file_perms;
-allow opencode_t self:unix_stream_socket create_stream_socket_perms;
+# opencode creates /tmp/bun-node-<hash>/ with symlinks bun→opencode,
+# node→opencode, then prepends this to PATH for subprocess invocations.
+# We use a dedicated type (opencode_tmp_t) instead of managing tmp_t directly.
+# files_tmp_filetrans ensures files created in /tmp by opencode get this label.
+files_tmp_filetrans(opencode_t, opencode_tmp_t, { file dir lnk_file })
+manage_files_pattern(opencode_t, opencode_tmp_t, opencode_tmp_t)
+manage_dirs_pattern(opencode_t, opencode_tmp_t, opencode_tmp_t)
+manage_lnk_files_pattern(opencode_t, opencode_tmp_t, opencode_tmp_t)
 
 ########################################
-# Network access
+# Network
 ########################################
 
-# Outbound HTTPS to LLM provider APIs (port 443)
-corenet_tcp_connect_http_port(opencode_t)
-corenet_tcp_connect_https_port(opencode_t)
-
-# Internal HTTP server (client/server architecture) on localhost
-# opencode binds to 127.0.0.1:4000 by default
-corenet_tcp_bind_generic_port(opencode_t)
+# TCP socket creation and connection
 allow opencode_t self:tcp_socket create_stream_socket_perms;
 allow opencode_t self:udp_socket create_socket_perms;
 
-# DNS resolution
+# Outbound HTTPS (port 443) and HTTP (port 80) to LLM provider APIs.
+# corenet_tcp_connect_http_port covers both 80 and 443 in Fedora targeted policy
+# (both ports are labeled http_port_t).
+corenet_tcp_connect_http_port(opencode_t)
+
+# Bind on localhost for the internal HTTP server (default port 4000).
+# corenet_tcp_bind_generic_node allows binding to any node address —
+# the specific port is controlled by the process itself binding to 127.0.0.1.
+corenet_tcp_bind_generic_node(opencode_t)
+
+# DNS resolution: read /etc/resolv.conf, /etc/nsswitch.conf
 sysnet_read_config(opencode_t)
-corenet_udp_connect_dns_port(opencode_t)
-
-########################################
-# Explicit denials (belt-and-suspenders)
-########################################
-
-# Do NOT allow writing to SSH keys or GPG keys even if DAC permits it
-# These are labeled ssh_home_t and gpg_home_t respectively
-neverallow opencode_t ssh_home_t:file write;
-neverallow opencode_t gpg_home_t:file write;
-
-# Do NOT allow loading kernel modules
-neverallow opencode_t self:capability sys_module;
-
-# Do NOT allow ptrace on unrelated processes
-# (ptrace on self is allowed for bun's JIT)
-allow opencode_t self:process ptrace;
-neverallow opencode_t { domain -opencode_t -kernel_t }:process ptrace;
+# UDP socket for DNS queries (getaddrinfo)
+allow opencode_t self:udp_socket { create connect getattr read write setopt };
