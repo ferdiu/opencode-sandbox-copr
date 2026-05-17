@@ -8,27 +8,38 @@
 #
 # Or let greywall handle setup automatically:
 #   greywall setup
+#
+# Debugging: if the service fails to start, run manually first to see output:
+#   greyproxy serve
 
 [Unit]
 Description=Greyproxy — deny-by-default SOCKS5/DNS proxy for greywall sandboxes
 Documentation=https://github.com/GreyhavenHQ/greyproxy
-After=network-online.target
+# No After=network-online.target for user services — network is always up
+# by the time a user session starts, and network-online.target is a system
+# target not available in user service scope.
 
 [Service]
 Type=simple
-# 'greyproxy serve' runs the proxy in foreground mode (no daemonisation).
-# The binary is installed system-wide by the RPM; no path quoting needed.
-ExecStart=%{_bindir}/greyproxy serve
+# Absolute path required — RPM macros are not expanded in unit files.
+# greyproxy is installed to /usr/bin/ by greyproxy.spec.
+ExecStart=/usr/bin/greyproxy serve
 Restart=on-failure
 RestartSec=5s
 
-# Security hardening for the service process itself
-# (Note: greyproxy needs network access; PrivateNetwork=yes would break it)
+# Security hardening compatible with unprivileged user services.
+#
+# NOTE: ProtectSystem=, ProtectHome=, and PrivateTmp= all require setting up
+# mount namespaces which needs elevated privileges — they cause exit code
+# 226/NAMESPACE when used in user services on most Fedora configurations.
+# Since greyproxy already runs as an unprivileged user with no special
+# capabilities, these options provide no additional security benefit here.
+#
+# Real confinement is provided by:
+#   - Running as the unprivileged user (DAC)
+#   - The opencode SELinux module (MAC, once switched to enforcing)
+#   - greywall's Seccomp BPF filter on the processes it spawns
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=%h/.config/greyproxy %h/.local/share/greyproxy %h/.local/bin
-PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

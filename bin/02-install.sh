@@ -6,11 +6,14 @@ rpmtopdir="$(rpm --eval %_topdir)"
 arch="$(rpm --eval %_arch)"
 dist="$(rpm --eval %dist)" # Includes the dot (e.g. .fc44)
 
+installable=(
+    $(find "$rpmtopdir/RPMS/$arch/" -name "greyproxy-*$dist.$arch.rpm")
+    $(find "$rpmtopdir/RPMS/$arch/" -name "greywall-*$dist.$arch.rpm")
+    $(find "$rpmtopdir/RPMS/$arch/" -name "opencode-*$dist.$arch.rpm")
+)
+
 # Install greyproxy first (greywall depends on it)
-echo "Installing build packages..."
-sudo dnf install -y \
-    "$rpmtopdir/RPMS/$arch/greyproxy-*$dist.$arch.rpm" \
-    "$rpmtopdir/RPMS/$arch/greywall-*$dist.$arch.rpm" \
-    "$rpmtopdir/RPMS/$arch/opencode-*$dist.$arch.rpm"
+echo "Installing build packages ${installable[@]}..."
+sudo dnf reinstall -y "${installable[@]}"
 
 echo "done. Bye ;)"
