@@ -218,7 +218,8 @@ jobs:
         if: env.START_BUILD == 'true'
         run: |
           echo "Copying sources..."
-          cp "$GITHUB_WORKSPACE/sources/"* "$GITHUB_WORKSPACE"/
+          cp -v "$GITHUB_WORKSPACE"/sources/* "$(dirname "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}")"/
+
           echo "Starting COPR build for opencode ${{ env.OPENCODE_BUILD_VERSION }}"
           copr-cli build "${{ env.COPR_PROJECT }}" \
             "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
@@ -289,7 +290,8 @@ jobs:
         if: env.START_BUILD == 'true'
         run: |
           echo "Copying sources..."
-          cp "$GITHUB_WORKSPACE/sources/"* "$GITHUB_WORKSPACE"/
+          cp -v "$GITHUB_WORKSPACE"/sources/* "$(dirname "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}")"/
+
           echo "Starting COPR build for greywall ${{ env.GREYWALL_BUILD_VERSION }}"
           copr-cli build "${{ env.COPR_PROJECT }}" \
             "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
@@ -360,7 +362,8 @@ jobs:
         if: env.START_BUILD == 'true'
         run: |
           echo "Copying sources..."
-          cp "$GITHUB_WORKSPACE/sources/"* "$GITHUB_WORKSPACE"/
+          cp -v "$GITHUB_WORKSPACE"/sources/* "$(dirname "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}")"/
+
           echo "Starting COPR build for greyproxy ${{ env.GREYPROXY_BUILD_VERSION }}"
           copr-cli build "${{ env.COPR_PROJECT }}" \
             "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
