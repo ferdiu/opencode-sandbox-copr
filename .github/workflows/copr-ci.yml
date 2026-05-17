@@ -217,6 +217,9 @@ jobs:
       - name: Trigger COPR build for opencode
         if: env.START_BUILD == 'true'
         run: |
+          echo "Downloading source..."
+          spectool -g -C "$GITHUB_WORKSPACE/sources/" "$GITHUB_WORKSPACE/${{ env.OPENCODE_SPEC }}"
+
           echo "Building sRPM..."
           rpmbuild -bs \
             --define "_sourcedir $GITHUB_WORKSPACE/sources" \
@@ -292,6 +295,9 @@ jobs:
       - name: Trigger COPR build for greywall
         if: env.START_BUILD == 'true'
         run: |
+          echo "Downloading source..."
+          spectool -g -C "$GITHUB_WORKSPACE/sources/" "$GITHUB_WORKSPACE/${{ env.GREYWALL_SPEC }}"
+
           echo "Building sRPM..."
           rpmbuild -bs \
             --define "_sourcedir $GITHUB_WORKSPACE/sources" \
@@ -367,6 +373,9 @@ jobs:
       - name: Trigger COPR build for greyproxy
         if: env.START_BUILD == 'true'
         run: |
+          echo "Downloading source..."
+          spectool -g -C "$GITHUB_WORKSPACE/sources/" "$GITHUB_WORKSPACE/${{ env.GREYPROXY_SPEC }}"
+
           echo "Building sRPM..."
           rpmbuild -bs \
             --define "_sourcedir $GITHUB_WORKSPACE/sources" \
