@@ -35,7 +35,7 @@ Name:           opencode
 # Bump Version + recalculate SHA256 on each upstream release.
 # Quick SHA256: curl -sL <Source0 URL> | sha256sum
 Version:        1.15.3
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Open source AI coding agent for the terminal
 
 License:        MIT

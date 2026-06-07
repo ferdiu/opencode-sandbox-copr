@@ -30,7 +30,7 @@
 
 Name:           greywall
 Version:        0.3.3
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Deny-by-default kernel sandbox for AI coding agents
 
 License:        Apache-2.0
@@ -153,6 +153,13 @@ echo "Run OpenCode sandboxed:"
 echo "  greywall --learning -- opencode   # first time: learn what it needs"
 echo "  greywall -- opencode              # subsequent runs"
 echo ""
+if ! setcap cap_bpf+ep %{_bindir}/greywall 2>/dev/null; then
+    echo "WARNING: Could not set CAP_BPF capability on greywall." >&2
+    echo "         eBPF-based violation monitoring will be unavailable." >&2
+    echo "         Run 'greywall --linux-features' to check what security features" >&2
+    echo "         are active on this system." >&2
+    echo "         See: https://docs.greywall.io/greywall/cli-reference#greywall---linux-features" >&2
+fi
 
 
 ##############################################################################
