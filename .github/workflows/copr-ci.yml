@@ -24,6 +24,11 @@ on:
   schedule:
     - cron: "0 2 * * *"   # 02:00 UTC daily — after most upstream release windows
   workflow_dispatch:        # allow manual trigger from the Actions tab
+    inputs:
+      force_rebuild:
+        description: "Force rebuild of all packages (skip version check)"
+        type: boolean
+        default: false
 
 env:
   COPR_USERNAME:    ferdiu
@@ -189,6 +194,14 @@ jobs:
           set -euo pipefail
           UPSTREAM="${{ needs.GetLatestVersions.outputs.OPENCODE_VERSION }}"
 
+          # Force rebuild if requested manually
+          if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            echo "Force rebuild requested — skipping version check"
+            echo "START_BUILD=true" >> "$GITHUB_ENV"
+            echo "OPENCODE_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
           COPR_VERSION=$(copr-cli get-package \
             "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
             --name opencode \
@@ -268,6 +281,14 @@ jobs:
           set -euo pipefail
           UPSTREAM="${{ needs.GetLatestVersions.outputs.GREYWALL_VERSION }}"
 
+          # Force rebuild if requested manually
+          if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            echo "Force rebuild requested — skipping version check"
+            echo "START_BUILD=true" >> "$GITHUB_ENV"
+            echo "GREYWALL_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
           COPR_VERSION=$(copr-cli get-package \
             "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
             --name greywall \
@@ -345,6 +366,14 @@ jobs:
         run: |
           set -euo pipefail
           UPSTREAM="${{ needs.GetLatestVersions.outputs.GREYPROXY_VERSION }}"
+
+          # Force rebuild if requested manually
+          if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            echo "Force rebuild requested — skipping version check"
+            echo "START_BUILD=true" >> "$GITHUB_ENV"
+            echo "GREYPROXY_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
           COPR_VERSION=$(copr-cli get-package \
             "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
