@@ -41,6 +41,6 @@ greywall check    # verify the sandbox stack is operational
 
 | Package | Upstream latest |
 |---------|----------------|
-| opencode | [![opencode](https://img.shields.io/badge/opencode-1.17.9-blue)](https://github.com/anomalyco/opencode/releases) |
+| opencode | [![opencode](https://img.shields.io/badge/opencode-1.17.10-blue)](https://github.com/anomalyco/opencode/releases) |
 | greywall | [![greywall](https://img.shields.io/badge/greywall-0.3.7-blue)](https://github.com/GreyhavenHQ/greywall/releases) |
 | greyproxy | [![greyproxy](https://img.shields.io/badge/greyproxy-0.4.5-blue)](https://github.com/GreyhavenHQ/greyproxy/releases) |
