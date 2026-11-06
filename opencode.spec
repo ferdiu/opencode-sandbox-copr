@@ -225,6 +225,15 @@ install -D -m 0755 %{SOURCE5} \
 install -d %{buildroot}%{_bindir}
 
 ##############################################################################
+# %post — main
+##############################################################################
+%post
+# v2 upgrade notice
+echo "NOTE: opencode now tracks OpenCode v2." >&2
+echo "      To stay on legacy v1: sudo dnf swap opencode opencode1" >&2
+
+
+##############################################################################
 # %files — main
 ##############################################################################
 %files
@@ -266,7 +275,7 @@ update-alternatives --install \
 
 # Ensure /usr/bin/opencode points to the launcher (we installed launcher as the primary*
 update-alternatives --set \
-    opencode %{libexecdir}/opencode/opencode-launch >/dev/null 2>&1 || :
+    opencode %{_libexecdir}/opencode/opencode-launch >/dev/null 2>&1 || :
 
 %postun selinux
 if [ "$1" -eq 0 ]; then
