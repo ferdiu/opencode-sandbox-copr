@@ -6,9 +6,15 @@
 #   restorecon -Rv ~/.local/share/opencode
 
 # The actual binary (in libexecdir — this is the exec entry point for SELinux domain transition)
+# Both prefixes are covered: opencode.spec installs to /usr/libexec/opencode/ (v2),
+# opencode1.spec installs to /usr/libexec/opencode1/ (legacy v1). Only one package
+# is installed at a time (they Conflicts:), so overlapping rules are harmless.
 /usr/libexec/opencode/opencode                --  gen_context(system_u:object_r:opencode_exec_t,s0)
 /usr/libexec/opencode/opencode-baseline       --  gen_context(system_u:object_r:opencode_exec_t,s0)
 /usr/libexec/opencode/opencode-launch         --  gen_context(system_u:object_r:opencode_exec_t,s0)
+/usr/libexec/opencode1/opencode                --  gen_context(system_u:object_r:opencode_exec_t,s0)
+/usr/libexec/opencode1/opencode-baseline       --  gen_context(system_u:object_r:opencode_exec_t,s0)
+/usr/libexec/opencode1/opencode-launch         --  gen_context(system_u:object_r:opencode_exec_t,s0)
 
 # The wrapper shell script at /usr/bin/opencode is a plain shell script
 # (not the exec entrypoint) — it does not need opencode_exec_t

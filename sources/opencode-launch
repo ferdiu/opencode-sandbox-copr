@@ -1,6 +1,9 @@
 #!/bin/sh
 # opencode-launch: choose best bundled binary and warn about alternatives
-libexecdir="/usr/libexec/opencode"
+# Location-relative: this script is installed alongside the binaries it
+# launches (/usr/libexec/opencode/ for v2, /usr/libexec/opencode1/ for v1),
+# so derive libexecdir from our own location instead of hardcoding a path.
+libexecdir="$(cd "$(dirname "$0")" && pwd)"
 warn_and_hint() {
   cat >&2 <<'WARN'
 WARNING: A more optimized opencode build may exist for your CPU (AVX2).

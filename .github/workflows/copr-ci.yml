@@ -7,6 +7,7 @@
 #
 # Upstreams tracked:
 #   opencode  — https://github.com/anomalyco/opencode
+#               (two release lines: v2.x built as `opencode`, v1.x as `opencode1`)
 #   greywall  — https://github.com/GreyhavenHQ/greywall
 #   greyproxy — https://github.com/GreyhavenHQ/greyproxy
 #
@@ -44,6 +45,7 @@ env:
 
   # Spec files (relative to GITHUB_WORKSPACE)
   OPENCODE_SPEC:    opencode.spec
+  OPENCODE1_SPEC:   opencode1.spec
   GREYWALL_SPEC:    greywall.spec
   GREYPROXY_SPEC:   greyproxy.spec
 
@@ -54,9 +56,10 @@ jobs:
   GetLatestVersions:
     runs-on: ubuntu-latest
     outputs:
-      OPENCODE_VERSION:  ${{ steps.versions.outputs.OPENCODE_VERSION }}
-      GREYWALL_VERSION:  ${{ steps.versions.outputs.GREYWALL_VERSION }}
-      GREYPROXY_VERSION: ${{ steps.versions.outputs.GREYPROXY_VERSION }}
+      OPENCODE_V2_VERSION:  ${{ steps.versions.outputs.OPENCODE_V2_VERSION }}
+      OPENCODE_V1_VERSION:  ${{ steps.versions.outputs.OPENCODE_V1_VERSION }}
+      GREYWALL_VERSION:     ${{ steps.versions.outputs.GREYWALL_VERSION }}
+      GREYPROXY_VERSION:    ${{ steps.versions.outputs.GREYPROXY_VERSION }}
 
     steps:
       - name: Resolve latest upstream versions
@@ -66,34 +69,65 @@ jobs:
         run: |
           set -euo pipefail
 
-          latest_release() {
-            # Extract "owner/repo" from a full GitHub URL like https://github.com/owner/repo
-            local owner_repo
+          latest_tag_matching() {
+            # $1 = full repo URL, $2 = extended regex for the tag, e.g. 'v1\.[0-9]+\.[0-9]+$'
+            # Fetches up to 3 pages of releases (300 total); stops early on an
+            # empty page so noisy release histories can't starve the match.
+            local owner_repo pattern page tmpdir pages
             owner_repo=$(echo "$1" | sed -E 's#https://github\.com/##; s#\.git$##; s#/$##')
-          
-            curl -sfL \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "X-GitHub-Api-Version: 2026-03-10" \
-              "https://api.github.com/repos/${owner_repo}/releases/latest" \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))'
+            pattern="$2"
+            tmpdir=$(mktemp -d)
+            for page in 1 2 3; do
+              curl -sfL \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2026-03-10" \
+                "https://api.github.com/repos/${owner_repo}/releases?per_page=100&page=${page}" \
+                > "$tmpdir/releases.json" || break
+              # stop early if this page has no further releases
+              [ "$(tr -d '[:space:]' < "$tmpdir/releases.json")" = "[]" ] && break
+              mv "$tmpdir/releases.json" "$tmpdir/page${page}.json"
+            done
+            pages=$(ls "$tmpdir"/page*.json 2>/dev/null) || true
+            if [ -n "$pages" ]; then
+              python3 -c "
+          import json,sys,re
+          pat = re.compile(sys.argv[1])
+          rels = []
+          for path in sys.argv[2:]:
+              with open(path) as fh:
+                  rels.extend(json.load(fh))
+          tags = [r['tag_name'] for r in rels
+                  if not r.get('draft') and not r.get('prerelease')
+                  and pat.fullmatch(r['tag_name'])]
+          tags.sort(key=lambda t: [int(p) for p in t.lstrip('v').split('.')])
+          print(tags[-1].lstrip('v') if tags else '')
+          " "$pattern" $pages
+            fi
+            rm -rf "$tmpdir"
           }
 
-          OPENCODE_VERSION=$(latest_release  "${{ env.OPENCODE_REPO }}")
-          GREYWALL_VERSION=$(latest_release  "${{ env.GREYWALL_REPO }}")
-          GREYPROXY_VERSION=$(latest_release "${{ env.GREYPROXY_REPO }}")
+          OPENCODE_V2_VERSION=$(latest_tag_matching  "${{ env.OPENCODE_REPO }}" 'v2\.[0-9]+\.[0-9]+$')
+          OPENCODE_V1_VERSION=$(latest_tag_matching  "${{ env.OPENCODE_REPO }}" 'v1\.[0-9]+\.[0-9]+$')
+          GREYWALL_VERSION=$(latest_tag_matching  "${{ env.GREYWALL_REPO }}" 'v[0-9]+\.[0-9]+\.[0-9]+$')
+          GREYPROXY_VERSION=$(latest_tag_matching "${{ env.GREYPROXY_REPO }}" 'v[0-9]+\.[0-9]+\.[0-9]+$')
 
-          echo "opencode  latest: $OPENCODE_VERSION"
-          echo "greywall  latest: $GREYWALL_VERSION"
-          echo "greyproxy latest: $GREYPROXY_VERSION"
+          echo "opencode v2  latest: $OPENCODE_V2_VERSION"
+          echo "opencode v1  latest: $OPENCODE_V1_VERSION"
+          echo "greywall     latest: $GREYWALL_VERSION"
+          echo "greyproxy    latest: $GREYPROXY_VERSION"
 
-          [ -n "$OPENCODE_VERSION"  ] || { echo "ERROR: could not resolve opencode version";  exit 1; }
-          [ -n "$GREYWALL_VERSION"  ] || { echo "ERROR: could not resolve greywall version";  exit 1; }
-          [ -n "$GREYPROXY_VERSION" ] || { echo "ERROR: could not resolve greyproxy version"; exit 1; }
+          # Warn on unresolved versions but keep going: one package's detection
+          # failure must not kill the builds of the other packages.
+          [ -n "$OPENCODE_V2_VERSION" ] || echo "WARNING: could not resolve opencode v2 version" >&2
+          [ -n "$OPENCODE_V1_VERSION" ] || echo "WARNING: could not resolve opencode v1 version" >&2
+          [ -n "$GREYWALL_VERSION"    ] || echo "WARNING: could not resolve greywall version"  >&2
+          [ -n "$GREYPROXY_VERSION"   ] || echo "WARNING: could not resolve greyproxy version" >&2
 
-          echo "OPENCODE_VERSION=$OPENCODE_VERSION"   >> "$GITHUB_OUTPUT"
-          echo "GREYWALL_VERSION=$GREYWALL_VERSION"   >> "$GITHUB_OUTPUT"
-          echo "GREYPROXY_VERSION=$GREYPROXY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "OPENCODE_V2_VERSION=$OPENCODE_V2_VERSION" >> "$GITHUB_OUTPUT"
+          echo "OPENCODE_V1_VERSION=$OPENCODE_V1_VERSION" >> "$GITHUB_OUTPUT"
+          echo "GREYWALL_VERSION=$GREYWALL_VERSION"       >> "$GITHUB_OUTPUT"
+          echo "GREYPROXY_VERSION=$GREYPROXY_VERSION"     >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -103,7 +137,8 @@ jobs:
       - name: Update README badges and version table
         run: |
           set -euo pipefail
-          OC="${{ steps.versions.outputs.OPENCODE_VERSION }}"
+          OC2="${{ steps.versions.outputs.OPENCODE_V2_VERSION }}"
+          OC1="${{ steps.versions.outputs.OPENCODE_V1_VERSION }}"
           GW="${{ steps.versions.outputs.GREYWALL_VERSION }}"
           GP="${{ steps.versions.outputs.GREYPROXY_VERSION }}"
 
@@ -120,11 +155,20 @@ jobs:
 
           | Package | Upstream | Description |
           |---------|----------|-------------|
-          | \`opencode\` | [anomalyco/opencode](https://github.com/anomalyco/opencode) | AI coding agent (self-contained Bun binary) |
+          | \`opencode\` | [anomalyco/opencode](https://github.com/anomalyco/opencode) | AI coding agent, OpenCode v2 line (self-contained Bun binary) |
+          | \`opencode1\` | same (v1 releases) | Legacy OpenCode v1 line (conflicts with \`opencode\`) |
           | \`opencode-selinux\` | same | SELinux MAC policy module (permissive by default) |
           | \`opencode-sandbox\` | same | Wrapper to launch opencode via greywall |
           | \`greywall\` | [GreyhavenHQ/greywall](https://github.com/GreyhavenHQ/greywall) | Kernel-level sandbox (bubblewrap + Landlock + Seccomp) |
           | \`greyproxy\` | [GreyhavenHQ/greyproxy](https://github.com/GreyhavenHQ/greyproxy) | Deny-by-default SOCKS5/DNS proxy with live dashboard |
+
+          ## Choosing v1 or v2
+
+          \`opencode\` = OpenCode 2.x (recommended). \`opencode1\` = legacy 1.x.
+          They conflict (both provide /usr/bin/opencode). Switch with:
+
+              sudo dnf swap opencode opencode1     # go back to v1
+              sudo dnf swap opencode1 opencode     # return to v2
 
           ## Install
 
@@ -140,6 +184,7 @@ jobs:
           ## COPR build status
 
           [![opencode build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/opencode/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/opencode/)
+          [![opencode1 build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/opencode1/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/opencode1/)
           [![greywall build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greywall/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greywall/)
           [![greyproxy build](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greyproxy/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ferdiu/opencode/package/greyproxy/)
 
@@ -151,7 +196,8 @@ jobs:
 
           | Package | Upstream latest |
           |---------|----------------|
-          | opencode | [![opencode](https://img.shields.io/badge/opencode-${OC}-blue)](https://github.com/anomalyco/opencode/releases) |
+          | opencode (v2) | [![opencode](https://img.shields.io/badge/opencode-${OC2}-blue)](https://github.com/anomalyco/opencode/releases) |
+          | opencode1 (v1) | [![opencode1](https://img.shields.io/badge/opencode1-${OC1}-blue)](https://github.com/anomalyco/opencode/releases) |
           | greywall | [![greywall](https://img.shields.io/badge/greywall-${GW}-blue)](https://github.com/GreyhavenHQ/greywall/releases) |
           | greyproxy | [![greyproxy](https://img.shields.io/badge/greyproxy-${GP}-blue)](https://github.com/GreyhavenHQ/greyproxy/releases) |
           EOF
@@ -159,12 +205,12 @@ jobs:
           git config --global user.name  "${{ env.GIT_USER_NAME }}"
           git config --global user.email "${{ env.GIT_USER_EMAIL }}"
           git add README.md
-          git commit --allow-empty -m "[CI] Update tracked versions: opencode=${OC} greywall=${GW} greyproxy=${GP}"
+          git commit --allow-empty -m "[CI] Update tracked versions: opencode=${OC2} opencode1=${OC1} greywall=${GW} greyproxy=${GP}"
           git push --force -v
 
 
 ##############################################################################
-# Job 2: Build opencode (and its subpackages) if upstream is ahead of COPR
+# Job 2: Build opencode (v2 line, and its subpackages) if upstream is ahead of COPR
 ##############################################################################
   BuildOpencode:
     needs: GetLatestVersions
@@ -196,7 +242,14 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          UPSTREAM="${{ needs.GetLatestVersions.outputs.OPENCODE_VERSION }}"
+          UPSTREAM="${{ needs.GetLatestVersions.outputs.OPENCODE_V2_VERSION }}"
+
+          # Skip only this package if the upstream version could not be resolved
+          if [ -z "$UPSTREAM" ]; then
+            echo "skipping: could not resolve upstream version"
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
           # Force rebuild if requested manually
           if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
@@ -251,7 +304,101 @@ jobs:
 
 
 ##############################################################################
-# Job 3: Build greywall if upstream is ahead of COPR
+# Job 3: Build opencode1 (legacy v1) if upstream v1 is ahead of COPR
+##############################################################################
+  BuildOpencode1:
+    needs: GetLatestVersions
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository }}
+
+      - name: Install dependencies
+        run: dnf install -y -q copr-cli python3 git rpm-build rpmdevtools
+
+      - name: Configure copr-cli
+        run: |
+          mkdir -p "$HOME/.config"
+          cat > "$HOME/.config/copr" << EOF
+          [copr-cli]
+          login    = ${{ secrets.COPR_BUILD_L }}
+          username = ${{ env.COPR_USERNAME }}
+          token    = ${{ secrets.COPR_BUILD_T }}
+          copr_url = ${{ env.COPR_URL }}
+          EOF
+
+      - name: Compare upstream version with COPR
+        id: check_opencode1
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          UPSTREAM="${{ needs.GetLatestVersions.outputs.OPENCODE_V1_VERSION }}"
+
+          # Skip only this package if the upstream version could not be resolved
+          if [ -z "$UPSTREAM" ]; then
+            echo "skipping: could not resolve upstream version"
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          # Force rebuild if requested manually
+          if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+            echo "Force rebuild requested — skipping version check"
+            echo "START_BUILD=true" >> "$GITHUB_ENV"
+            echo "OPENCODE_V1_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          COPR_VERSION=$(copr-cli get-package \
+            "${{ env.COPR_USERNAME }}/${{ env.COPR_PROJECT }}" \
+            --name opencode1 \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["latest_build"]["source_package"]["version"])' \
+            2>/dev/null || echo "")
+
+          echo "Upstream : $UPSTREAM"
+          echo "COPR     : ${COPR_VERSION:-<none>}"
+
+          # Normalise to zero-padded integers for comparison (handles x.y.z)
+          norm() { echo "$1" | awk -F. '{printf "%05d%05d%05d\n", $1, $2, $3}'; }
+
+          if [ -z "$COPR_VERSION" ] || [ "$(norm "$UPSTREAM")" -gt "$(norm "${COPR_VERSION%-*}")" ]; then
+            echo "START_BUILD=true" >> "$GITHUB_ENV"
+            echo "OPENCODE_V1_BUILD_VERSION=$UPSTREAM" >> "$GITHUB_ENV"
+            echo "→ COPR build needed"
+          else
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            echo "→ COPR already up to date, skipping"
+          fi
+
+      - name: Patch version into spec file
+        if: env.START_BUILD == 'true'
+        run: |
+          sed -i "s/^Version:.*/Version:        ${{ env.OPENCODE_V1_BUILD_VERSION }}/" \
+            "$GITHUB_WORKSPACE/${{ env.OPENCODE1_SPEC }}"
+
+      - name: Trigger COPR build for opencode1
+        if: env.START_BUILD == 'true'
+        run: |
+          echo "Downloading source..."
+          spectool -g -C "$GITHUB_WORKSPACE/sources/" "$GITHUB_WORKSPACE/${{ env.OPENCODE1_SPEC }}"
+
+          echo "Building sRPM..."
+          rpmbuild -bs \
+            --define "_sourcedir $GITHUB_WORKSPACE/sources" \
+            --define "_specdir $GITHUB_WORKSPACE" \
+            --define "_srcrpmdir $GITHUB_WORKSPACE" \
+            $GITHUB_WORKSPACE/${{ env.OPENCODE1_SPEC }}
+
+          echo "Starting COPR build for opencode1 ${{ env.OPENCODE_V1_BUILD_VERSION }}"
+          copr-cli build "${{ env.COPR_PROJECT }}" $GITHUB_WORKSPACE/*.src.rpm
+
+
+##############################################################################
+# Job 4: Build greywall if upstream is ahead of COPR
 ##############################################################################
   BuildGreywall:
     needs: GetLatestVersions
@@ -284,6 +431,13 @@ jobs:
         run: |
           set -euo pipefail
           UPSTREAM="${{ needs.GetLatestVersions.outputs.GREYWALL_VERSION }}"
+
+          # Skip only this package if the upstream version could not be resolved
+          if [ -z "$UPSTREAM" ]; then
+            echo "skipping: could not resolve upstream version"
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
           # Force rebuild if requested manually
           if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
@@ -337,7 +491,7 @@ jobs:
 
 
 ##############################################################################
-# Job 4: Build greyproxy if upstream is ahead of COPR
+# Job 5: Build greyproxy if upstream is ahead of COPR
 ##############################################################################
   BuildGreyproxy:
     needs: GetLatestVersions
@@ -370,6 +524,13 @@ jobs:
         run: |
           set -euo pipefail
           UPSTREAM="${{ needs.GetLatestVersions.outputs.GREYPROXY_VERSION }}"
+
+          # Skip only this package if the upstream version could not be resolved
+          if [ -z "$UPSTREAM" ]; then
+            echo "skipping: could not resolve upstream version"
+            echo "START_BUILD=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
           # Force rebuild if requested manually
           if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
