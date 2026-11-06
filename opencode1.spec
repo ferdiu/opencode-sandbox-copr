@@ -48,9 +48,9 @@ URL:            https://opencode.ai
 
 # Upstream distributes a single self-contained binary compiled with Bun.
 # The tarball for linux-x64 unpacks as a bare ./opencode ELF (no subdirectory).
-# Confirm layout with: tar -tzf opencode-linux-x64.tar.gz
-Source0:        https://github.com/anomalyco/opencode/releases/download/v%{version}/opencode-linux-x64.tar.gz
-Source1:        https://github.com/anomalyco/opencode/releases/download/v%{version}/opencode-linux-x64-baseline.tar.gz
+# Confirm layout with: tar -tzf opencode-linux-x64.tar.gz#/opencode-%{version}-linux-x64.tar.gz
+Source0:        https://github.com/anomalyco/opencode/releases/download/v%{version}/opencode-linux-x64.tar.gz#/opencode-%{version}-linux-x64.tar.gz
+Source1:        https://github.com/anomalyco/opencode/releases/download/v%{version}/opencode-linux-x64-baseline.tar.gz#/opencode-%{version}-linux-x64-baseline.tar.gz
 # SELinux policy sources — live next to this spec in git (see sources/ dir)
 Source2:        opencode.te
 Source3:        opencode.fc
