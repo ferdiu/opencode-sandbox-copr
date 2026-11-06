@@ -3,9 +3,10 @@
 # Repository:  https://github.com/ferdiu/opencode-sandbox-copr
 # COPR project: https://copr.fedorainfracloud.org/coprs/ferdiu/opencode
 #
-# Part of a 3-spec COPR project. Directory layout expected in git:
+# Part of a 4-spec COPR project. Directory layout expected in git:
 #
-#   opencode.spec       (this file)
+#   opencode.spec       (this file — tracks the v2.x line)
+#   opencode1.spec      (legacy v1.x line)
 #   greywall.spec
 #   greyproxy.spec
 #   sources/
@@ -32,9 +33,10 @@
 %define __brp_linkdupes /bin/true
 
 Name:           opencode
-# Bump Version + recalculate SHA256 on each upstream release.
-# Quick SHA256: curl -sL <Source0 URL> | sha256sum
-Version:        1.15.3
+# Bump Version on each upstream v2.x release (the CI workflow does this
+# automatically). This spec tracks the v2.x line; the legacy v1.x line lives
+# in opencode1.spec. Quick SHA256 (not currently used): curl -sL <Source0 URL> | sha256sum
+Version:        2.2.5
 Release:        2%{?dist}
 Summary:        Open source AI coding agent for the terminal
 
@@ -68,6 +70,9 @@ BuildRequires:  checkpolicy
 # pulling them here guarantees the sandbox layer is available.
 Requires:       bubblewrap
 Requires:       socat
+# Mutually exclusive with the legacy v1 package (opencode1): both ship
+# /usr/bin/opencode; switch with: sudo dnf swap opencode opencode1
+Conflicts:      opencode1
 
 %description
 OpenCode is an open source, terminal-based AI coding agent.
@@ -286,6 +291,9 @@ fi
 # %changelog
 ##############################################################################
 %changelog
+* Fri Nov 06 2026 ferdiu - 2.2.5-1
+- Track OpenCode v2; conflicts with opencode1 (legacy v1 package)
+
 * Sun May 17 2026 Federico Manzella <ferdiu@users.noreply.github.com> - 1.15.3-1
 - Initial COPR package for opencode v1.15.3
 - Binary is Bun-compiled, fully self-contained — no Node/Bun runtime required
